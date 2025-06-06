@@ -7,7 +7,7 @@ permalink: :title
 {%- assign f = site.data.formula[data_fname] -%}
 <h2
     {%- if f.disabled %} class="disabled" title="This formula has been disabled since {{ f.disable_date | escape }} because it {{ site.reasons.formula[f.disable_reason] | default: f.disable_reason | escape }}"
-    {%- elsif f.deprecated %} class="deprecated" title="This formula has been deprecated since {{ f.deprecation_date | escape }} because it {{ site.reasons.formula[f.deprecation_reason] | default: f.deprecation_reason | escape }}"
+    {%- elsif f.deprecated %} class="deprecated" title="This formula has been deprecated{% if f.deprecation_date %} since {{ f.deprecation_date | escape }}{% endif %} because it {{ site.reasons.formula[f.deprecation_reason] | default: f.deprecation_reason | escape }}"
     {%- endif -%}
     >
     {{ f.name | escape }}
@@ -15,6 +15,23 @@ permalink: :title
     {%- elsif f.deprecated %} (deprecated)
     {%- endif -%}
 </h2>
+
+{%- if f.deprecated == false and f.deprecation_date -%}
+    {%- include attribute.html key="Deprecation date" value=f.deprecation_date -%}
+{%- endif -%}
+{%- if f.disabled == false and f.disable_date -%}
+    {%- include attribute.html key="Disable date" value=f.disable_date -%}
+{%- endif -%}
+
+{%- if f.disable_replacement_formula -%}
+    {%- include replacement.html item=f.disable_replacement_formula r_type="formula" -%}
+{%- elsif f.disable_replacement_cask -%}
+    {%- include replacement.html item=f.disable_replacement_cask r_type="cask" -%}
+{%- elsif f.deprecation_replacement_formula -%}
+    {%- include replacement.html item=f.deprecation_replacement_formula r_type="formula" -%}
+{%- elsif f.deprecation_replacement_cask -%}
+    {%- include replacement.html item=f.deprecation_replacement_cask r_type="cask" -%}
+{%- endif -%}
 
 {%- include install_command.html item=f.name %}
 {%- if f.aliases.size > 0 %}
@@ -35,6 +52,7 @@ permalink: :title
 {%- endif %}
 <p class="desc">{{ f.desc | escape }}</p>
 <p class="homepage"><a href="{{ f.homepage | escape }}">{{ f.homepage | escape }}</a></p>
+
 {%- if f.license.size > 0 %}
 <p>License:
     {%- for license in f.license %}
@@ -62,9 +80,16 @@ permalink: :title
 {%- if bottles -%}
     {%- assign arm64_bottle_count = 0 -%}
     {%- assign intel_bottle_count = 0 -%}
+    {%- assign linux_bottle_count = 0 -%}
     {%- for b in f.bottle.stable.files -%}
         {%- if b[0] contains "arm64_" -%}
-            {%- assign arm64_bottle_count = arm64_bottle_count | plus: 1 -%}
+            {%- if b[0] contains "_linux" -%}
+                {%- assign linux_bottle_count = linux_bottle_count | plus: 1 -%}
+            {%- else -%}
+                {%- assign arm64_bottle_count = arm64_bottle_count | plus: 1 -%}
+            {%- endif -%}
+        {%- elsif b[0] contains "_linux" -%}
+            {%- assign linux_bottle_count = linux_bottle_count | plus: 1 -%}
         {%- else -%}
             {%- assign intel_bottle_count = intel_bottle_count | plus: 1 -%}
         {%- endif -%}
@@ -73,9 +98,12 @@ permalink: :title
     {%- assign subsequent = false -%}
     {%- for b in f.bottle.stable.files -%}
         {%- if b[0] contains "arm64_" %}
+            {%- if b[0] contains "_linux" -%}
+                {%- continue -%}
+            {%- endif -%}
         <tr>
             {%- unless subsequent -%}
-            <th rowspan="{{ arm64_bottle_count }}" scope="rowgroup">Apple Silicon</th>
+            <th rowspan="{{ arm64_bottle_count }}" scope="rowgroup">macOS on<br>Apple Silicon</th>
             {%- endunless %}
             <td style="text-transform:capitalize;">
                 {{ b[0] | remove_first: "arm64_" | replace: "_", "&nbsp;" }}
@@ -85,21 +113,45 @@ permalink: :title
         </tr>
         {%- endif -%}
     {%- endfor %}
+    {%- if arm64_bottle_count > 0 and intel_bottle_count > 0 %}
     <tr><th colspan="3"></th></tr>
+    {%- endif %}
     {%- assign subsequent = false -%}
     {%- for b in f.bottle.stable.files -%}
         {%- unless b[0] contains "arm64_" %}
+            {%- if b[0] contains "_linux" -%}
+                {%- continue -%}
+            {%- endif -%}
         <tr>
             {%- unless subsequent -%}
-            <th rowspan="{{ intel_bottle_count }}" scope="rowgroup">Intel</th>
+            <th rowspan="{{ intel_bottle_count }}" scope="rowgroup">macOS on<br>Intel</th>
             {%- endunless %}
             <td style="text-transform:capitalize;">
-                {{ b[0] | replace: "x86_64", "64-bit" | replace: "_", "&nbsp;" }}
+                {{ b[0] | replace: "_", "&nbsp;" }}
                 {%- assign subsequent = true -%}
             </td>
             <td>✅</td>
         </tr>
         {%- endunless -%}
+    {%- endfor -%}
+    {%- assign macos_bottle_count = arm64_bottle_count | plus: intel_bottle_count %}
+    {%- if macos_bottle_count > 0 and linux_bottle_count > 0 %}
+    <tr><th colspan="3"></th></tr>
+    {%- endif %}
+    {%- assign subsequent = false -%}
+    {%- for b in f.bottle.stable.files -%}
+        {%- if b[0] contains "_linux" %}
+        <tr>
+            {%- unless subsequent -%}
+            <th rowspan="{{ linux_bottle_count }}" scope="rowgroup">Linux</th>
+            {%- endunless %}
+            <td>
+                {{ b[0] | replace: "arm64", "ARM64" | replace: "_linux", "" }}
+                {%- assign subsequent = true -%}
+            </td>
+            <td>✅</td>
+        </tr>
+        {%- endif -%}
     {%- endfor -%}
 </table>
 {%- endif %}
@@ -122,8 +174,8 @@ permalink: :title
 
 {%- include formulae.html fnames=f.versioned_formulae description="Other versions" -%}
 
-{%- if f.revision > 0 %}
-<p>Revision: <strong>{{ f.revision }}</strong></p>
+{%- if f.revision > 0 -%}
+    {%- include attribute.html key="Revision" value=f.revision -%}
 {%- endif -%}
 
 {%- if f.keg_only %}
